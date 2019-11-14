@@ -21,6 +21,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# Description of steps: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
 # AES ENCRYPTION (Decryption coming soon)
 # by Gecko
 
@@ -30,8 +31,40 @@ key = "Thats my Kung Fu"
 ROUNDS = 10
 # 10 rounds: 128 bit keys
 # 12 rounds: 192 bit keys
-# 14 rounds: 256 bit keys
+# 14 rounds: 256 bit keys (Not supported yet)
 
+
+
+
+
+# Split strings into chunks
+def subdivide_string(string, chars):
+    return [string[i:i+chars] for i in range(0, len(string), chars)]
+
+# Multiplication in finite field
+def finite_multiply(a, b):
+    reduction = 0b100011011 << 7
+    b = b << 7
+    p = 0
+    for i in range(8):
+        if a & (128 >> i):
+            p ^= b
+
+        if p & (256*128 >> i):
+            p ^= reduction
+        b = b >> 1
+
+        reduction = reduction >> 1
+    return p
+
+# Exclusive or function
+def list_xor(a, b):
+    r = a+[]
+    for i in range(len(a)):
+        r[i] = (r[i] ^ b[i])
+    return r
+
+# S_Box lookup and swap function
 s_box = [
 0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
 0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
@@ -50,30 +83,13 @@ s_box = [
 0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
 0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16]
 
-def subdivide_string(string, chars):
-    return [string[i:i+chars] for i in range(0, len(string), chars)]
-
 def s_box_swap(char):
     if type(char) == int: uni = char
     else: uni = ord(char)
     if uni <= 256: return s_box[16*(uni >> 4) + (uni & 0x0F)]
     else: return uni
 
-def finite_multiply(a, b):
-    reduction = 0b100011011 << 7
-    b = b << 7
-    p = 0
-    for i in range(8):
-        if a & (128 >> i):
-            p ^= b
-
-        if p & (256*128 >> i):
-            p ^= reduction
-        b = b >> 1
-
-        reduction = reduction >> 1
-    return p
-
+# Display function
 def print_2D_hex(a, separate_lines = True):
     for y in range(4):
         for x in range(4):
@@ -81,97 +97,138 @@ def print_2D_hex(a, separate_lines = True):
         if separate_lines: print()
     print()
 
-def list_xor(a, b):
-    r = a+[]
-    for i in range(len(a)):
-        r[i] = (r[i] ^ b[i])
 
-    return r
 
-state = []
 
-# DIVIDE KEY
-round_key = []
-for k in subdivide_string(key, 4):
-    hex_chunk = []
-    for h in k:
-        hex_chunk.append(ord(h))
 
-    round_key.append(hex_chunk)
+# Key Scheduler
+# round keys are derived from the cipher key using Rijndael's key schedule. AES requires 
+# a separate 128-bit round key block for each round plus one more.
+def key_expansion(rounds, round_key):
+    round_keys = []
+    round_key_sub = [[],[],[],[]]
+    rci = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36, 0x6C, 0xD8, 0xAB, 0x4D, 0x9A, 0x2F, 0x5E, 0xBC, 0x63, 0xC6, 0x97, 0x35, 0x6A, 0xD4, 0xB3, 0x7D, 0xFA, 0xEF, 0xC5]
+    for i in range(ROUNDS+1):
+        round_keys.append(round_key+[])
 
-# DIVIDE TEXT
-for k in subdivide_string(text, 4):
-    state_line = []
-    for sk in k:
-        state_line.append(ord(sk))
+        gw3 = round_key[3]+[]
+        gw3.append(gw3.pop(0))
+        for idx, c in enumerate(gw3): gw3[idx] = s_box_swap(c)
+        if i+1 == 1: gw3[0] ^= 1
+        elif i+1 > 1 and 0x80 > rci[i-1]: gw3[0] ^= 2*rci[i-1]
+        else: gw3[0] ^= (2*rci[i-1] ^ 0x1b) % 256
 
-    state.append(state_line)
+        round_key_sub[0] = list_xor(round_key[0], gw3)
+        round_key_sub[1] = list_xor(round_key_sub[0], round_key[1])
+        round_key_sub[2] = list_xor(round_key_sub[1], round_key[2])
+        round_key_sub[3] = list_xor(round_key_sub[2], round_key[3])
 
-# KEY EXPANSION
-round_keys = []
-round_key_sub = [[],[],[],[]]
-rci = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36, 0x6C, 0xD8, 0xAB, 0x4D, 0x9A, 0x2F, 0x5E, 0xBC, 0x63, 0xC6, 0x97, 0x35, 0x6A, 0xD4, 0xB3, 0x7D, 0xFA, 0xEF, 0xC5]
-for i in range(ROUNDS+1):
-    round_keys.append(round_key+[])
+        round_key = round_key_sub
 
-    gw3 = round_key[3]+[]
-    gw3.append(gw3.pop(0))
-    for idx, c in enumerate(gw3): gw3[idx] = s_box_swap(c)
-    if i+1 == 1: gw3[0] ^= 1
-    elif i+1 > 1 and 0x80 > rci[i-1]: gw3[0] ^= 2*rci[i-1]
-    else: gw3[0] ^= (2*rci[i-1] ^ 0x1b) % 256
+    return round_keys
 
-    round_key_sub[0] = list_xor(round_key[0], gw3)
-    round_key_sub[1] = list_xor(round_key_sub[0], round_key[1])
-    round_key_sub[2] = list_xor(round_key_sub[1], round_key[2])
-    round_key_sub[3] = list_xor(round_key_sub[2], round_key[3])
-
-    round_key = round_key_sub
-
-# ROUND 0 ADD ROUND KEY
-added_state = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]
-for x in range(4):
-    for y in range(4):
-        added_state[y][x] = state[x][y] ^ round_keys[0][x][y]
-state = added_state
-
-# MAIN LOOP
-for round_number in range(ROUNDS):
-    # SUBSITUTE BYTES
-    for x in range(4):
-        for y in range(4):
-            state[x][y] = s_box_swap(state[x][y])
-
-    # SHIFT ROWS
-    for i in range(4):
-        for s in range(i):
-            state[i].append(state[i].pop(0))
-
-    if round_number < ROUNDS-1:
-        # MIX COLUMNS
-        columns = []
-        mixed_chunk = []
-        for ci in range(4):
-            mixed_column = []
-            mask = [2, 3, 1, 1]
-
-            for m in range(4):
-                net = 0
-                for c in range(4):
-                    net ^= finite_multiply(state[c][ci], mask[c])
-                mask.insert(0, mask.pop())
-
-                mixed_column.append(net)
-                
-            for r in range(4):
-                state[r][ci] = mixed_column[r]
-
-    # ADD ROUND KEY
+def add_round_key(state, round_key, swap_xy=False):
     added_state = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]
     for x in range(4):
         for y in range(4):
-            added_state[y][x] = state[y][x] ^ round_keys[round_number+1][x][y]
-
+            if swap_xy: state_val = state[x][y]
+            else: state_val = state[y][x]
+            added_state[y][x] = state_val ^ round_key[x][y]
     state = added_state
+    return state
 
+def sub_bytes(state):
+    for x in range(4):
+        for y in range(4):
+            state[x][y] = s_box_swap(state[x][y])
+    return state
+
+def shift_rows(state):
+    for i in range(4):
+        for s in range(i):
+            state[i].append(state[i].pop(0))
+    return state
+
+def mix_columns(state):
+    columns = []
+    mixed_chunk = []
+    for ci in range(4):
+        mixed_column = []
+        mask = [2, 3, 1, 1]
+
+        for m in range(4):
+            net = 0
+            for c in range(4):
+                net ^= finite_multiply(state[c][ci], mask[c])
+            mask.insert(0, mask.pop())
+
+            mixed_column.append(net)
+            
+        for r in range(4):
+            state[r][ci] = mixed_column[r]
+    
+    return state
+
+
+
+
+
+# Divides input key into a key matrix
+# (4x4) hex data
+round_key = []
+for k in subdivide_string(key, 4):
+    hex_chunk = []
+    for h in k: hex_chunk.append(ord(h))
+
+    round_key.append(hex_chunk)
+
+# Divide input text into a state matrix
+# (4x4) hex data
+state = []
+for k in subdivide_string(text, 4):
+    state_line = []
+    for sk in k: state_line.append(ord(sk))
+
+    state.append(state_line)
+
+
+
+
+
+# Key Expansion
+# round keys are derived from the cipher key using Rijndael's key schedule. 
+# AES requires a separate 128-bit round key block for each round plus one more.
+round_keys = key_expansion(state, round_key)
+
+# Add Round Key
+# Each byte of the state is combined with a block of the round key using bitwise xor.
+state = add_round_key(state, round_keys[0], True)
+
+# Round loop
+# The amount of rounds to loop depends on AES mode, 128-bit, 192-bit, 
+# or 256-bit (currently not supported)
+for round_number in range(ROUNDS):
+
+    # Substitute Bytes
+    # a non-linear substitution step where each byte is replaced with another according to a 
+    # lookup table.
+    sub_bytes(state)
+
+    # Shift Rows
+    # a transposition step where the last three rows of the state are shifted cyclically a 
+    # certain number of steps.
+    shift_rows(state)
+
+    if round_number != ROUNDS-1: # Last Round does perform MixColumns
+        # Mix Columns
+        # a linear mixing operation which operates on the columns of the state, combining
+        # the four bytes in each column.
+        mix_columns(state)
+
+    # Add Round key (stated above)
+    state = add_round_key(state, round_keys[round_number+1])
+
+
+
+# Print final state
 print_2D_hex(state, False)
