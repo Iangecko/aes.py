@@ -411,3 +411,4 @@ if __name__ == "__main__":
     plain_text = cipher.decrypt(KEY, cipher_text)
     plain_text_ascii = cipher.to_plain(plain_text)
     print("DECRYPTED PLAIN TEXT:  \"{}\"".format(plain_text_ascii))
+
